@@ -100,13 +100,14 @@ class RosDebianGenerator(DebianGenerator):
         )
         subs['Rosdistro'] = self.rosdistro
         subs['Package'] = rosify_package_name(subs['Package'], self.rosdistro)
-        parents = self.get_parent_distributions()
-        subs['ParentPrefixes'] = ['/opt/ros/' + parent for parent in parents]
 
         # ROS 2 specific bloom extensions.
         ros2_distros = [
             name for name, values in get_index().distributions.items()
             if values.get('distribution_type') == 'ros2']
+        # REP 159: the binary_import parent walk is for ROS 2 distributions only
+        parents = self.get_parent_distributions() if self.rosdistro in ros2_distros else []
+        subs['ParentPrefixes'] = ['/opt/ros/' + parent for parent in parents]
         if self.rosdistro in ros2_distros:
             workspace_deps = get_ros_workspace_dependencies(package.name, self.rosdistro, parents)
             subs['BuildDepends'] += workspace_deps
