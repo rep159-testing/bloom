@@ -8,12 +8,20 @@
 
 # Uncomment this to turn on verbose mode.
 export DH_VERBOSE=1
+@{
+# REP 159: binary_import parents of this distribution, nearest first
+source_parents = ''.join(
+    'if [ -f "%s/setup.sh" ]; then . "%s/setup.sh"; fi && ' % (p, p)
+    for p in reversed(ParentPrefixes))
+prefix_path = ';'.join([InstallationPrefix] + list(ParentPrefixes))
+pkg_config_path = ':'.join(p + '/lib/pkgconfig' for p in [InstallationPrefix] + list(ParentPrefixes))
+}@
 # TODO: remove the LDFLAGS override.  It's here to avoid esoteric problems
 # of this sort:
 #  https://code.ros.org/trac/ros/ticket/2977
 #  https://code.ros.org/trac/ros/ticket/3842
 export LDFLAGS=
-export PKG_CONFIG_PATH=@(InstallationPrefix)/lib/pkgconfig
+export PKG_CONFIG_PATH=@(pkg_config_path)
 # Explicitly enable -DNDEBUG, see:
 # 	https://github.com/ros-infrastructure/bloom/issues/327
 export DEB_CXXFLAGS_MAINT_APPEND=-DNDEBUG
@@ -33,17 +41,20 @@ override_dh_auto_configure:
 	# In case we're installing to a non-standard location, look for a setup.sh
 	# in the install tree and source it.  It will set things like
 	# CMAKE_PREFIX_PATH, PKG_CONFIG_PATH, and PYTHONPATH.
-	if [ -f "@(InstallationPrefix)/setup.sh" ]; then . "@(InstallationPrefix)/setup.sh"; fi && \
+	@(source_parents)if [ -f "@(InstallationPrefix)/setup.sh" ]; then . "@(InstallationPrefix)/setup.sh"; fi && \
 	dh_auto_configure -- \
 		-DCMAKE_INSTALL_PREFIX="@(InstallationPrefix)" \
-		-DCMAKE_PREFIX_PATH="@(InstallationPrefix)" \
+		-DCMAKE_PREFIX_PATH="@(prefix_path)" \
+@[if Name == 'ros_workspace' and ParentPrefixes]@
+		-DROS_WORKSPACE_PARENT_PREFIX_PATH="@(';'.join(ParentPrefixes))" \
+@[end if]@
 		$(BUILD_TESTING_ARG)
 
 override_dh_auto_build:
 	# In case we're installing to a non-standard location, look for a setup.sh
 	# in the install tree and source it.  It will set things like
 	# CMAKE_PREFIX_PATH, PKG_CONFIG_PATH, and PYTHONPATH.
-	if [ -f "@(InstallationPrefix)/setup.sh" ]; then . "@(InstallationPrefix)/setup.sh"; fi && \
+	@(source_parents)if [ -f "@(InstallationPrefix)/setup.sh" ]; then . "@(InstallationPrefix)/setup.sh"; fi && \
 	dh_auto_build
 
 override_dh_auto_test:
@@ -51,19 +62,19 @@ override_dh_auto_test:
 	# in the install tree and source it.  It will set things like
 	# CMAKE_PREFIX_PATH, PKG_CONFIG_PATH, and PYTHONPATH.
 	echo -- Running tests. Even if one of them fails the build is not canceled.
-	if [ -f "@(InstallationPrefix)/setup.sh" ]; then . "@(InstallationPrefix)/setup.sh"; fi && \
+	@(source_parents)if [ -f "@(InstallationPrefix)/setup.sh" ]; then . "@(InstallationPrefix)/setup.sh"; fi && \
 	dh_auto_test || true
 
 override_dh_shlibdeps:
 	# In case we're installing to a non-standard location, look for a setup.sh
 	# in the install tree and source it.  It will set things like
 	# CMAKE_PREFIX_PATH, PKG_CONFIG_PATH, and PYTHONPATH.
-	if [ -f "@(InstallationPrefix)/setup.sh" ]; then . "@(InstallationPrefix)/setup.sh"; fi && \
+	@(source_parents)if [ -f "@(InstallationPrefix)/setup.sh" ]; then . "@(InstallationPrefix)/setup.sh"; fi && \
 	dh_shlibdeps -l$(CURDIR)/debian/@(Package)/@(InstallationPrefix)/lib/:$(CURDIR)/debian/@(Package)/@(InstallationPrefix)/lib/${DEB_HOST_MULTIARCH}
 
 override_dh_auto_install:
 	# In case we're installing to a non-standard location, look for a setup.sh
 	# in the install tree and source it.  It will set things like
 	# CMAKE_PREFIX_PATH, PKG_CONFIG_PATH, and PYTHONPATH.
-	if [ -f "@(InstallationPrefix)/setup.sh" ]; then . "@(InstallationPrefix)/setup.sh"; fi && \
+	@(source_parents)if [ -f "@(InstallationPrefix)/setup.sh" ]; then . "@(InstallationPrefix)/setup.sh"; fi && \
 	dh_auto_install
