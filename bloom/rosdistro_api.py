@@ -178,6 +178,52 @@ def get_distribution_file(distro):
     return _rosdistro_distribution_files[distro]
 
 
+def get_binary_import_parents(distro, index=None):
+    """Return the distributions whose binaries ``distro`` uses, nearest first.
+
+    REP 159: a distribution that extends another with ``binary_import``
+    installs into /opt/ros/<distro> and uses the parent's packages from
+    /opt/ros/<parent>. ``source_rebuild`` edges are not followed: those
+    packages are rebuilt into the child's own prefix. Each parent is followed
+    by its own parents; with several parents the declared order is kept, and
+    a duplicate keeps its first position.
+
+    Raises RuntimeError when a declared parent cannot be read or when
+    ``extends`` has a cycle.
+    """
+    if index is None:
+        index = get_index()
+    parents = []
+    _collect_binary_import_parents(index, distro, _get_extends(index, distro), [distro], parents)
+    return parents
+
+
+def _get_extends(index, distro):
+    # REP 143: the last distribution file is the one to use
+    files = rosdistro.get_distribution_files(index, distro)
+    if not files:
+        raise RuntimeError("No distribution files listed for distribution '{0}'".format(distro))
+    return getattr(files[-1], 'extends', None) or []
+
+
+def _collect_binary_import_parents(index, distro, extends, chain, parents):
+    for ext in extends:
+        if ext['extension_method'] != 'binary_import':
+            continue
+        parent = ext['distro_name']
+        if parent in chain:
+            raise RuntimeError("Cycle in 'extends': {0}".format(' -> '.join(chain + [parent])))
+        try:
+            parent_index = rosdistro.get_index(ext['index_url']) if ext.get('index_url') else index
+            parent_extends = _get_extends(parent_index, parent)
+        except Exception as e:
+            raise RuntimeError("Could not read distribution '{0}', which '{1}' extends: {2}"
+                               .format(parent, distro, e))
+        if parent not in parents:
+            parents.append(parent)
+        _collect_binary_import_parents(parent_index, parent, parent_extends, chain + [parent], parents)
+
+
 def get_rosdistro_index_commit():
     return _rosdistro_index_commit
 
