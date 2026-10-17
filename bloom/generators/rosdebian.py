@@ -42,8 +42,9 @@ from bloom.generators.debian.generator import generate_substitutions_from_packag
 from bloom.generators.debian.generate_cmd import main as debian_main
 from bloom.generators.debian.generate_cmd import prepare_arguments
 
-from bloom.logging import info
+from bloom.logging import error, info
 
+from bloom.rosdistro_api import get_binary_import_parents
 from bloom.rosdistro_api import get_index
 from bloom.rosdistro_api import get_non_eol_distros_prompt
 
@@ -52,6 +53,7 @@ class RosDebianGenerator(DebianGenerator):
     title = 'rosdebian'
     description = "Generates debians tailored for the given rosdistro"
     default_install_prefix = '/opt/ros/'
+    _binary_import_parents = None
 
     def prepare_arguments(self, parser):
         # Add command line arguments for this generator
@@ -69,6 +71,16 @@ class RosDebianGenerator(DebianGenerator):
         ret = DebianGenerator.summarize(self)
         info("Releasing for rosdistro: " + self.rosdistro)
         return ret
+
+    def get_parent_distributions(self):
+        # REP 159: the same for every package of this release, so walk once
+        if self._binary_import_parents is None:
+            try:
+                self._binary_import_parents = get_binary_import_parents(self.rosdistro)
+            except Exception as e:
+                error("Could not find the binary_import parents of '{0}': {1}".format(self.rosdistro, e),
+                      exit=True)
+        return self._binary_import_parents
 
     def get_subs(self, package, debian_distro, releaser_history, deb_inc=0, native=False):
         def fallback_resolver(key, peer_packages, rosdistro=self.rosdistro):
@@ -88,18 +100,17 @@ class RosDebianGenerator(DebianGenerator):
         )
         subs['Rosdistro'] = self.rosdistro
         subs['Package'] = rosify_package_name(subs['Package'], self.rosdistro)
+        parents = self.get_parent_distributions()
+        subs['ParentPrefixes'] = ['/opt/ros/' + parent for parent in parents]
 
         # ROS 2 specific bloom extensions.
         ros2_distros = [
             name for name, values in get_index().distributions.items()
             if values.get('distribution_type') == 'ros2']
         if self.rosdistro in ros2_distros:
-            # Add ros-workspace package as a dependency to any package other
-            # than ros_workspace and its dependencies.
-            if package.name not in ['ament_cmake_core', 'ament_package', 'ros_workspace']:
-                workspace_pkg_name = rosify_package_name('ros-workspace', self.rosdistro)
-                subs['BuildDepends'].append(workspace_pkg_name)
-                subs['Depends'].append(workspace_pkg_name)
+            workspace_deps = get_ros_workspace_dependencies(package.name, self.rosdistro, parents)
+            subs['BuildDepends'] += workspace_deps
+            subs['Depends'] += workspace_deps
 
             # Add packages necessary to build vendor typesupport for rosidl_interface_packages to their
             # build dependencies.
@@ -150,6 +161,22 @@ class RosDebianGenerator(DebianGenerator):
 
 def rosify_package_name(name, rosdistro):
     return 'ros-{0}-{1}'.format(rosdistro, name)
+
+
+def get_ros_workspace_dependencies(package_name, rosdistro, parents):
+    """Return the ros-workspace packages a ROS 2 package depends on.
+
+    Every package depends on its own distribution's ros_workspace, which
+    provides the setup files, except ros_workspace and the two packages it is
+    built with. REP 159: the ros_workspace of a binary_import child depends
+    on the ros_workspace of each parent instead, so that the prefixes its
+    setup files source are installed, and present when it is built.
+    """
+    if package_name == 'ros_workspace':
+        return [rosify_package_name('ros-workspace', parent) for parent in parents]
+    if package_name in ('ament_cmake_core', 'ament_package'):
+        return []
+    return [rosify_package_name('ros-workspace', rosdistro)]
 
 
 def get_subs(pkg, os_name, os_version, ros_distro, deb_inc, native):

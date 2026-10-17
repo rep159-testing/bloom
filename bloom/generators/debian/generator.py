@@ -360,6 +360,9 @@ def generate_substitutions_from_package(
     data['Package'] = sanitize_package_name(package.name)
     # Installation prefix
     data['InstallationPrefix'] = installation_prefix
+    # REP 159: install prefixes of the binary_import parent distributions,
+    # nearest first; the rosdebian generator fills them in
+    data['ParentPrefixes'] = []
     # Resolve dependencies
     evaluate_package_conditions(package, ros_distro)
     depends = [
