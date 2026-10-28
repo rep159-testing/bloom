@@ -45,7 +45,9 @@ from bloom.generators.debian.generate_cmd import prepare_arguments
 from bloom.logging import error, info
 
 from bloom.rosdistro_api import get_binary_import_parents
+from bloom.rosdistro_api import get_binary_package_name
 from bloom.rosdistro_api import get_index
+from bloom.rosdistro_api import get_install_prefix
 from bloom.rosdistro_api import get_non_eol_distros_prompt
 
 
@@ -63,7 +65,7 @@ class RosDebianGenerator(DebianGenerator):
 
     def handle_arguments(self, args):
         self.rosdistro = args.rosdistro
-        self.default_install_prefix += self.rosdistro
+        self.default_install_prefix = get_install_prefix(self.rosdistro)
         ret = DebianGenerator.handle_arguments(self, args)
         return ret
 
@@ -107,7 +109,7 @@ class RosDebianGenerator(DebianGenerator):
             if values.get('distribution_type') == 'ros2']
         # REP 159: the binary_import parent walk is for ROS 2 distributions only
         parents = self.get_parent_distributions() if self.rosdistro in ros2_distros else []
-        subs['ParentPrefixes'] = ['/opt/ros/' + parent for parent in parents]
+        subs['ParentPrefixes'] = [get_install_prefix(parent) for parent in parents]
         if self.rosdistro in ros2_distros:
             workspace_deps = get_ros_workspace_dependencies(package.name, self.rosdistro, parents)
             subs['BuildDepends'] += workspace_deps
@@ -161,7 +163,7 @@ class RosDebianGenerator(DebianGenerator):
 
 
 def rosify_package_name(name, rosdistro):
-    return 'ros-{0}-{1}'.format(rosdistro, name)
+    return get_binary_package_name(rosdistro, name)
 
 
 def get_ros_workspace_dependencies(package_name, rosdistro, parents):
@@ -187,7 +189,7 @@ def get_subs(pkg, os_name, os_version, ros_distro, deb_inc, native):
         os_name,
         os_version,
         ros_distro,
-        RosDebianGenerator.default_install_prefix + ros_distro,
+        get_install_prefix(ros_distro),
         deb_inc=deb_inc,
         native=native
     )

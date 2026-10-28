@@ -100,3 +100,28 @@ def test_unreachable_parent_index_raises(tmp_path):
 def test_cycle_raises(tmp_path):
     with pytest.raises(RuntimeError, match="Cycle in 'extends': a -> b -> a"):
         parents(tmp_path, {'a': bi('b'), 'b': bi('a')}, 'a')
+
+
+def test_get_binary_package_name_fallback():
+    from bloom.rosdistro_api import get_binary_package_name
+    assert get_binary_package_name('foxy', 'my_package') == 'ros-foxy-my-package'
+
+
+def test_get_install_prefix_fallback():
+    from bloom.rosdistro_api import get_install_prefix
+    assert get_install_prefix('foxy') == '/opt/ros/foxy'
+
+
+def test_get_binary_package_name_and_install_rule(monkeypatch):
+    from bloom.rosdistro_api import get_binary_package_name, get_install_prefix
+
+    class MockDistFile:
+        install_rule = '/opt/vendor/{distro}'
+
+        def get_binary_package_name(self, pkg):
+            return 'vendor-custom-' + pkg.replace('_', '-')
+
+    monkeypatch.setattr('bloom.rosdistro_api.get_distribution_file', lambda d: MockDistFile())
+    assert get_binary_package_name('composable', 'upstream_a') == 'vendor-custom-upstream-a'
+    assert get_install_prefix('composable') == '/opt/vendor/composable'
+

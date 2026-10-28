@@ -239,3 +239,35 @@ def get_non_eol_distros_prompt():
         if info.get('distribution_status') != 'end-of-life':
             non_eol_distros.append(name)
     return ', '.join(non_eol_distros)
+
+
+def get_binary_package_name(distro, package_name):
+    """Return the platform binary package name for package_name in distro.
+
+    If the distribution file specifies a binary_rule (REP 159), delegates to
+    dist_file.get_binary_package_name(). Otherwise falls back to standard
+    ros-<distro>-<pkg> naming.
+    """
+    try:
+        dist_file = get_distribution_file(distro)
+        if dist_file and hasattr(dist_file, 'get_binary_package_name'):
+            return dist_file.get_binary_package_name(package_name)
+    except Exception:
+        pass
+    return 'ros-{0}-{1}'.format(distro, package_name.replace('_', '-'))
+
+
+def get_install_prefix(distro):
+    """Return the installation prefix for distro.
+
+    If the distribution file specifies an install_rule (REP 159), expands
+    {distro} in install_rule. Otherwise defaults to /opt/ros/<distro>.
+    """
+    try:
+        dist_file = get_distribution_file(distro)
+        if dist_file and getattr(dist_file, 'install_rule', None):
+            return dist_file.install_rule.replace('{distro}', distro)
+    except Exception:
+        pass
+    return '/opt/ros/{0}'.format(distro)
+
