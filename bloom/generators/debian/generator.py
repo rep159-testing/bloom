@@ -866,7 +866,7 @@ class DebianGenerator(BloomGenerator):
                     warning("Overwriting tag: " + tag_name)
             else:
                 info("Creating tag: " + tag_name)
-            execute_command('git tag -f ' + tag_name)
+            execute_command('git tag -f -m "' + tag_name + '" ' + tag_name)
         # Report of success
         name = destination.split('/')[-1]
         package = self.packages[name]
