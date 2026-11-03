@@ -125,3 +125,13 @@ def test_get_binary_package_name_and_install_rule(monkeypatch):
     assert get_binary_package_name('composable', 'upstream_a') == 'vendor-custom-upstream-a'
     assert get_install_prefix('composable') == '/opt/vendor/composable'
 
+
+def test_get_install_prefix_delegates_to_dist_file(monkeypatch):
+    from bloom.rosdistro_api import get_install_prefix
+
+    class MockDistFileWithMethod:
+        def get_install_prefix(self, pkg_name=None):
+            return '/opt/custom/prefix'
+
+    monkeypatch.setattr('bloom.rosdistro_api.get_distribution_file', lambda d: MockDistFileWithMethod())
+    assert get_install_prefix('my_distro') == '/opt/custom/prefix'

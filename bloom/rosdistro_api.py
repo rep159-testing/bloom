@@ -257,17 +257,20 @@ def get_binary_package_name(distro, package_name):
     return 'ros-{0}-{1}'.format(distro, package_name.replace('_', '-'))
 
 
-def get_install_prefix(distro):
+def get_install_prefix(distro, package_name=None):
     """Return the installation prefix for distro.
 
-    If the distribution file specifies an install_rule (REP 159), expands
-    {distro} in install_rule. Otherwise defaults to /opt/ros/<distro>.
+    If the distribution file specifies an install_rule (REP 159), delegates to
+    dist_file.get_install_prefix(). Otherwise defaults to /opt/ros/<distro>.
     """
     try:
         dist_file = get_distribution_file(distro)
+        if dist_file and hasattr(dist_file, 'get_install_prefix'):
+            return dist_file.get_install_prefix(package_name)
         if dist_file and getattr(dist_file, 'install_rule', None):
-            return dist_file.install_rule.replace('{distro}', distro)
+            rule = dist_file.install_rule
+            if isinstance(rule, str):
+                return rule.replace('{distro}', distro).replace('{DISTRO}', distro)
     except Exception:
         pass
     return '/opt/ros/{0}'.format(distro)
-
