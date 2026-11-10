@@ -270,7 +270,7 @@ def get_install_prefix(distro, package_name=None):
         if dist_file and getattr(dist_file, 'install_rule', None):
             rule = dist_file.install_rule
             if isinstance(rule, str):
-                return rule.replace('{distro}', distro).replace('{DISTRO}', distro)
+                return rule.replace('{distro}', distro)
     except Exception:
         pass
     return '/opt/ros/{0}'.format(distro)
