@@ -17,7 +17,7 @@ SETUP_LINE = (
     'if [ -f "/opt/ros/child/setup.sh" ]; then . "/opt/ros/child/setup.sh"; fi && \\')
 
 
-def render(build_type, prefix, parents, name):
+def render(build_type, prefix, parents, name, workspace_package='ros_workspace'):
     with open(os.path.join(TEMPLATES, build_type, 'rules.em')) as f:
         template = f.read()
     return expand_template_em(template, {
@@ -25,6 +25,7 @@ def render(build_type, prefix, parents, name):
         'Name': name,
         'Package': 'ros-%s-%s' % (os.path.basename(prefix), name.replace('_', '-')),
         'ParentPrefixes': parents,
+        'WorkspacePackage': workspace_package,
     })
 
 
@@ -50,7 +51,7 @@ def test_child_rules_use_the_parents(build_type):
 
 
 @pytest.mark.parametrize('build_type', BUILD_TYPES)
-def test_only_ros_workspace_gets_the_parent_list(build_type):
+def test_only_the_workspace_package_gets_the_parent_list(build_type):
     rules = render(build_type, '/opt/ros/child', ['/opt/ros/root'], 'upstream_c')
     assert 'ROS_WORKSPACE_PARENT_PREFIX_PATH' not in rules
     assert '-DCMAKE_PREFIX_PATH="/opt/ros/child;/opt/ros/root"' in rules
@@ -67,3 +68,14 @@ def test_child_rules_are_a_valid_makefile(build_type, tmp_path):
                             universal_newlines=True)
     assert result.returncode == 0, result.stderr
     assert '-DROS_WORKSPACE_PARENT_PREFIX_PATH="/opt/ros/mid;/opt/ros/root"' in result.stdout
+
+
+@pytest.mark.parametrize('build_type', BUILD_TYPES)
+def test_another_workspace_package_gets_the_parent_list(build_type):
+    rules = render(build_type, '/opt/ros/child', ['/opt/ros/root'], 'ros_workspace_shell',
+                   workspace_package='ros_workspace_shell')
+    assert '-DROS_WORKSPACE_PARENT_PREFIX_PATH="/opt/ros/root"' in rules
+    # ros_workspace is then an ordinary package
+    rules = render(build_type, '/opt/ros/child', ['/opt/ros/root'], 'ros_workspace',
+                   workspace_package='ros_workspace_shell')
+    assert 'ROS_WORKSPACE_PARENT_PREFIX_PATH' not in rules

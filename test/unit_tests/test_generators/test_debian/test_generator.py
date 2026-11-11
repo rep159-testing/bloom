@@ -62,3 +62,4 @@ def test_substitutions_default_to_no_parent_prefixes(tmp_path):
     with redirected_stdio():
         subs = generate_substitutions_from_package(package, 'ubuntu', 'resolute', 'upstream')
     assert subs['ParentPrefixes'] == []
+    assert subs['WorkspacePackage'] == 'ros_workspace'

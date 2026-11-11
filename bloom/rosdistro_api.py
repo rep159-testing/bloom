@@ -178,6 +178,23 @@ def get_distribution_file(distro):
     return _rosdistro_distribution_files[distro]
 
 
+# REP 159: the package that installs the setup files of a distribution's
+# prefix, unless its distribution file names another one in
+# 'workspace_package'
+DEFAULT_WORKSPACE_PACKAGE = 'ros_workspace'
+
+
+def get_workspace_package(distro, index=None):
+    """Return the package that installs the setup files of ``distro``'s prefix.
+
+    REP 159: a distribution file may name it in ``workspace_package``;
+    without it, the package is ros_workspace. It is not inherited from parents.
+    """
+    if index is None:
+        index = get_index()
+    return _get_workspace_package(_get_last_distribution_file(index, distro))
+
+
 def get_binary_import_parents(distro, index=None):
     """Return the distributions whose binaries ``distro`` uses, nearest first.
 
@@ -191,23 +208,38 @@ def get_binary_import_parents(distro, index=None):
     Raises RuntimeError when a declared parent cannot be read or when
     ``extends`` has a cycle.
     """
+    return [parent for parent, _ in get_binary_import_parent_workspace_packages(distro, index)]
+
+
+def get_binary_import_parent_workspace_packages(distro, index=None):
+    """Return ``(parent, workspace package)`` for each binary_import parent.
+
+    The parents are those of get_binary_import_parents(), in the same order;
+    the workspace package of each is read from the parent's own distribution
+    file, in the parent's own index when ``extends`` names one.
+    """
     if index is None:
         index = get_index()
     parents = []
-    _collect_binary_import_parents(index, distro, _get_extends(index, distro), [distro], parents)
+    _collect_binary_import_parents(
+        index, distro, _get_last_distribution_file(index, distro), [distro], parents)
     return parents
 
 
-def _get_extends(index, distro):
+def _get_last_distribution_file(index, distro):
     # REP 143: the last distribution file is the one to use
     files = rosdistro.get_distribution_files(index, distro)
     if not files:
         raise RuntimeError("No distribution files listed for distribution '{0}'".format(distro))
-    return getattr(files[-1], 'extends', None) or []
+    return files[-1]
 
 
-def _collect_binary_import_parents(index, distro, extends, chain, parents):
-    for ext in extends:
+def _get_workspace_package(distribution_file):
+    return getattr(distribution_file, 'workspace_package', None) or DEFAULT_WORKSPACE_PACKAGE
+
+
+def _collect_binary_import_parents(index, distro, distribution_file, chain, parents):
+    for ext in getattr(distribution_file, 'extends', None) or []:
         if ext['extension_method'] != 'binary_import':
             continue
         parent = ext['distro_name']
@@ -215,13 +247,13 @@ def _collect_binary_import_parents(index, distro, extends, chain, parents):
             raise RuntimeError("Cycle in 'extends': {0}".format(' -> '.join(chain + [parent])))
         try:
             parent_index = rosdistro.get_index(ext['index_url']) if ext.get('index_url') else index
-            parent_extends = _get_extends(parent_index, parent)
+            parent_file = _get_last_distribution_file(parent_index, parent)
         except Exception as e:
             raise RuntimeError("Could not read distribution '{0}', which '{1}' extends: {2}"
                                .format(parent, distro, e))
-        if parent not in parents:
-            parents.append(parent)
-        _collect_binary_import_parents(parent_index, parent, parent_extends, chain + [parent], parents)
+        if parent not in [name for name, _ in parents]:
+            parents.append((parent, _get_workspace_package(parent_file)))
+        _collect_binary_import_parents(parent_index, parent, parent_file, chain + [parent], parents)
 
 
 def get_rosdistro_index_commit():

@@ -4,13 +4,16 @@ import pytest
 import rosdistro
 import yaml
 
+from bloom.rosdistro_api import get_binary_import_parent_workspace_packages
 from bloom.rosdistro_api import get_binary_import_parents
+from bloom.rosdistro_api import get_workspace_package
 
 
-def write_index(root, distributions):
+def write_index(root, distributions, workspace_packages=None):
     """Write an index of format-3 distributions with only `extends` filled in.
 
-    `distributions` maps a name to its list of `extends` entries (or None).
+    `distributions` maps a name to its list of `extends` entries (or None);
+    `workspace_packages` maps a name to its `workspace_package`, if any.
     """
     os.makedirs(str(root))
     index = {'type': 'index', 'version': 4, 'distributions': {}}
@@ -24,6 +27,8 @@ def write_index(root, distributions):
         }
         if extends:
             data['extends'] = extends
+        if workspace_packages and name in workspace_packages:
+            data['workspace_package'] = workspace_packages[name]
         with open(str(root / name / 'distribution.yaml'), 'w') as f:
             yaml.safe_dump(data, f)
         index['distributions'][name] = {
@@ -135,3 +140,31 @@ def test_get_install_prefix_delegates_to_dist_file(monkeypatch):
 
     monkeypatch.setattr('bloom.rosdistro_api.get_distribution_file', lambda d: MockDistFileWithMethod())
     assert get_install_prefix('my_distro') == '/opt/custom/prefix'
+
+
+def test_workspace_package_defaults_to_ros_workspace(tmp_path):
+    index = rosdistro.get_index(write_index(tmp_path / 'index', {'upstream': None}))
+    assert get_workspace_package('upstream', index) == 'ros_workspace'
+
+
+def test_workspace_package_from_the_distribution_file(tmp_path):
+    index = rosdistro.get_index(write_index(
+        tmp_path / 'index', {'upstream': None, 'srcext': sr('upstream')},
+        {'srcext': 'ros_workspace_shell'}))
+    assert get_workspace_package('srcext', index) == 'ros_workspace_shell'
+    # not inherited: the parent keeps its own
+    assert get_workspace_package('upstream', index) == 'ros_workspace'
+
+
+def test_workspace_package_of_a_missing_distribution_raises(tmp_path):
+    index = rosdistro.get_index(write_index(tmp_path / 'index', {'upstream': None}))
+    with pytest.raises(RuntimeError):
+        get_workspace_package('nowhere', index)
+
+
+def test_parents_come_with_their_own_workspace_package(tmp_path):
+    other = write_index(tmp_path / 'other', {'root': None}, {'root': 'ros_workspace_shell'})
+    distributions = {'mid': bi('root', index_url=other), 'child': bi('mid')}
+    index = rosdistro.get_index(write_index(tmp_path / 'index', distributions))
+    assert get_binary_import_parent_workspace_packages('child', index) == \
+        [('mid', 'ros_workspace'), ('root', 'ros_workspace_shell')]
