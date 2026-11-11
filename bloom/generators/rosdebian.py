@@ -44,9 +44,10 @@ from bloom.generators.debian.generate_cmd import prepare_arguments
 
 from bloom.logging import error, info
 
-from bloom.rosdistro_api import get_binary_import_parents
+from bloom.rosdistro_api import get_binary_import_parent_workspace_packages
 from bloom.rosdistro_api import get_index
 from bloom.rosdistro_api import get_non_eol_distros_prompt
+from bloom.rosdistro_api import get_workspace_package
 
 
 class RosDebianGenerator(DebianGenerator):
@@ -54,6 +55,7 @@ class RosDebianGenerator(DebianGenerator):
     description = "Generates debians tailored for the given rosdistro"
     default_install_prefix = '/opt/ros/'
     _binary_import_parents = None
+    _workspace_package = None
 
     def prepare_arguments(self, parser):
         # Add command line arguments for this generator
@@ -73,14 +75,25 @@ class RosDebianGenerator(DebianGenerator):
         return ret
 
     def get_parent_distributions(self):
+        """Return ``(parent, workspace package)`` for each binary_import parent."""
         # REP 159: the same for every package of this release, so walk once
         if self._binary_import_parents is None:
             try:
-                self._binary_import_parents = get_binary_import_parents(self.rosdistro)
+                self._binary_import_parents = get_binary_import_parent_workspace_packages(self.rosdistro)
             except Exception as e:
                 error("Could not find the binary_import parents of '{0}': {1}".format(self.rosdistro, e),
                       exit=True)
         return self._binary_import_parents
+
+    def get_workspace_package(self):
+        # REP 159: the package that installs the setup files of the prefix
+        if self._workspace_package is None:
+            try:
+                self._workspace_package = get_workspace_package(self.rosdistro)
+            except Exception as e:
+                error("Could not read the workspace package of '{0}': {1}".format(self.rosdistro, e),
+                      exit=True)
+        return self._workspace_package
 
     def get_subs(self, package, debian_distro, releaser_history, deb_inc=0, native=False):
         def fallback_resolver(key, peer_packages, rosdistro=self.rosdistro):
@@ -107,9 +120,11 @@ class RosDebianGenerator(DebianGenerator):
             if values.get('distribution_type') == 'ros2']
         # REP 159: the binary_import parent walk is for ROS 2 distributions only
         parents = self.get_parent_distributions() if self.rosdistro in ros2_distros else []
-        subs['ParentPrefixes'] = ['/opt/ros/' + parent for parent in parents]
+        subs['ParentPrefixes'] = ['/opt/ros/' + parent for parent, _ in parents]
         if self.rosdistro in ros2_distros:
-            workspace_deps = get_ros_workspace_dependencies(package.name, self.rosdistro, parents)
+            workspace_package = self.get_workspace_package()
+            subs['WorkspacePackage'] = workspace_package
+            workspace_deps = get_workspace_dependencies(package.name, self.rosdistro, workspace_package, parents)
             subs['BuildDepends'] += workspace_deps
             subs['Depends'] += workspace_deps
 
@@ -164,20 +179,24 @@ def rosify_package_name(name, rosdistro):
     return 'ros-{0}-{1}'.format(rosdistro, name)
 
 
-def get_ros_workspace_dependencies(package_name, rosdistro, parents):
-    """Return the ros-workspace packages a ROS 2 package depends on.
+def get_workspace_dependencies(package_name, rosdistro, workspace_package, parents):
+    """Return the workspace packages a ROS 2 package depends on.
 
-    Every package depends on its own distribution's ros_workspace, which
-    provides the setup files, except ros_workspace and the two packages it is
-    built with. REP 159: the ros_workspace of a binary_import child depends
-    on the ros_workspace of each parent instead, so that the prefixes its
-    setup files source are installed, and present when it is built.
+    Every package depends on its own distribution's workspace package, which
+    provides the setup files: ``workspace_package`` of the distribution file,
+    ros_workspace by default (REP 159). ros_workspace itself and the two
+    packages it is built with get none. REP 159: the workspace package of a
+    binary_import child depends on the workspace package of each parent
+    instead, given as ``(parent, workspace package)`` pairs, so that the
+    prefixes its setup files source are installed, and present when it is
+    built.
     """
-    if package_name == 'ros_workspace':
-        return [rosify_package_name('ros-workspace', parent) for parent in parents]
-    if package_name in ('ament_cmake_core', 'ament_package'):
+    if package_name == workspace_package:
+        return [rosify_package_name(sanitize_package_name(parent_workspace), parent)
+                for parent, parent_workspace in parents]
+    if workspace_package == 'ros_workspace' and package_name in ('ament_cmake_core', 'ament_package'):
         return []
-    return [rosify_package_name('ros-workspace', rosdistro)]
+    return [rosify_package_name(sanitize_package_name(workspace_package), rosdistro)]
 
 
 def get_subs(pkg, os_name, os_version, ros_distro, deb_inc, native):

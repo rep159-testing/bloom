@@ -45,7 +45,7 @@ override_dh_auto_configure:
 	dh_auto_configure -- \
 		-DCMAKE_INSTALL_PREFIX="@(InstallationPrefix)" \
 		-DCMAKE_PREFIX_PATH="@(prefix_path)" \
-@[if Name == 'ros_workspace' and ParentPrefixes]@
+@[if Name == WorkspacePackage and ParentPrefixes]@
 		-DROS_WORKSPACE_PARENT_PREFIX_PATH="@(';'.join(ParentPrefixes))" \
 @[end if]@
 		$(BUILD_TESTING_ARG)

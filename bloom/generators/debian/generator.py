@@ -363,6 +363,9 @@ def generate_substitutions_from_package(
     # REP 159: install prefixes of the binary_import parent distributions,
     # nearest first; the rosdebian generator fills them in
     data['ParentPrefixes'] = []
+    # REP 159: the package that installs the setup files of the prefix, which
+    # alone gets the parent prefixes; the rosdebian generator fills it in
+    data['WorkspacePackage'] = 'ros_workspace'
     # Resolve dependencies
     evaluate_package_conditions(package, ros_distro)
     depends = [
