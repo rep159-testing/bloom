@@ -11,7 +11,7 @@ export DH_VERBOSE=1
 @{
 # REP 159: binary_import parents of this distribution, nearest first
 source_parents = ''.join(
-    'if [ -f "%s/setup.sh" ]; then . "%s/setup.sh"; fi && ' % (p, p)
+    'if [ -f "%s/setup.sh" ]; then . "%s/setup.sh"; unset AMENT_CURRENT_PREFIX; fi && ' % (p, p)
     for p in reversed(ParentPrefixes))
 prefix_path = ';'.join([InstallationPrefix] + list(ParentPrefixes))
 pkg_config_path = ':'.join(p + '/lib/pkgconfig' for p in [InstallationPrefix] + list(ParentPrefixes))

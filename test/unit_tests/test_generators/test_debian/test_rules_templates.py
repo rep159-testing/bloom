@@ -12,8 +12,8 @@ GOLDEN = os.path.join(os.path.dirname(__file__), 'test_generator_data', 'rules_g
 BUILD_TYPES = ('ament_cmake', 'cmake')
 PARENTS = ['/opt/ros/mid', '/opt/ros/root']
 SETUP_LINE = (
-    '\tif [ -f "/opt/ros/root/setup.sh" ]; then . "/opt/ros/root/setup.sh"; fi && '
-    'if [ -f "/opt/ros/mid/setup.sh" ]; then . "/opt/ros/mid/setup.sh"; fi && '
+    '\tif [ -f "/opt/ros/root/setup.sh" ]; then . "/opt/ros/root/setup.sh"; unset AMENT_CURRENT_PREFIX; fi && '
+    'if [ -f "/opt/ros/mid/setup.sh" ]; then . "/opt/ros/mid/setup.sh"; unset AMENT_CURRENT_PREFIX; fi && '
     'if [ -f "/opt/ros/child/setup.sh" ]; then . "/opt/ros/child/setup.sh"; fi && \\')
 
 
