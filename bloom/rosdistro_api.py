@@ -169,15 +169,12 @@ def get_most_recent(thing_name, repository, reference_distro):
 def get_distribution_file(distro):
     global _rosdistro_distribution_files
     if distro not in _rosdistro_distribution_files:
-        try:
-            _rosdistro_distribution_files[distro] = rosdistro.get_distribution_file(get_index(), distro)
-        except Exception:
-            # REP 143, get list of distribution files and take the last one
-            files = rosdistro.get_distribution_files(get_index(), distro)
-            if not files:
-                error("No distribution files listed for distribution '{0}'."
-                      .format(distro), exit=True)
-            _rosdistro_distribution_files[distro] = files[-1]
+        # REP 143 / REP 159: merge distribution files and resolve extends
+        dist_file = rosdistro.get_distribution_file(get_index(), distro)
+        if dist_file is None:
+            error("No distribution files listed for distribution '{0}'."
+                  .format(distro), exit=True)
+        _rosdistro_distribution_files[distro] = dist_file
     return _rosdistro_distribution_files[distro]
 
 

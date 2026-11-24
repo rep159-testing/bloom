@@ -168,3 +168,14 @@ def test_parents_come_with_their_own_workspace_package(tmp_path):
     index = rosdistro.get_index(write_index(tmp_path / 'index', distributions))
     assert get_binary_import_parent_workspace_packages('child', index) == \
         [('mid', 'ros_workspace'), ('root', 'ros_workspace_shell')]
+
+
+def test_get_distribution_file_propagates_extends_errors(tmp_path, monkeypatch):
+    import bloom.rosdistro_api as rosdistro_api
+
+    index = rosdistro.get_index(write_index(tmp_path / 'index', {'child': bi('missing_parent')}))
+    monkeypatch.setattr(rosdistro_api, '_rosdistro_index', index)
+    monkeypatch.setattr(rosdistro_api, '_rosdistro_distribution_files', {})
+
+    with pytest.raises(RuntimeError, match='missing_parent'):
+        rosdistro_api.get_distribution_file('child')
