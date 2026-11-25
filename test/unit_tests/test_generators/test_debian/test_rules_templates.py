@@ -5,6 +5,7 @@ import subprocess
 import pytest
 
 import bloom.generators.debian
+from bloom.rosdistro_api import get_workspace_packages
 from bloom.util import expand_template_em
 
 TEMPLATES = os.path.join(os.path.dirname(bloom.generators.debian.__file__), 'templates')
@@ -25,7 +26,7 @@ def render(build_type, prefix, parents, name, workspace_package='ros_workspace')
         'Name': name,
         'Package': 'ros-%s-%s' % (os.path.basename(prefix), name.replace('_', '-')),
         'ParentPrefixes': parents,
-        'WorkspacePackage': workspace_package,
+        'WorkspacePackages': get_workspace_packages(workspace_package),
     })
 
 
@@ -79,3 +80,15 @@ def test_another_workspace_package_gets_the_parent_list(build_type):
     rules = render(build_type, '/opt/ros/child', ['/opt/ros/root'], 'ros_workspace',
                    workspace_package='ros_workspace_shell')
     assert 'ROS_WORKSPACE_PARENT_PREFIX_PATH' not in rules
+
+
+@pytest.mark.parametrize('build_type', BUILD_TYPES)
+def test_ros_workspace_shell_gets_the_parent_list_with_ros_workspace(build_type):
+    # REP 159: after the split of ros_workspace, ros_workspace_shell installs
+    # the setup files of a prefix whose workspace package is ros_workspace,
+    # so it needs the parent prefixes too
+    rules = render(build_type, '/opt/ros/child', PARENTS, 'ros_workspace_shell')
+    assert '-DROS_WORKSPACE_PARENT_PREFIX_PATH="/opt/ros/mid;/opt/ros/root"' in rules
+    # ros_workspace keeps them, for a ros_workspace that still installs them
+    rules = render(build_type, '/opt/ros/child', PARENTS, 'ros_workspace')
+    assert '-DROS_WORKSPACE_PARENT_PREFIX_PATH="/opt/ros/mid;/opt/ros/root"' in rules
