@@ -195,6 +195,25 @@ def get_workspace_package(distro, index=None):
     return _get_workspace_package(_get_last_distribution_file(index, distro))
 
 
+# REP 159: the packages a workspace package needs in its own prefix. Since
+# ros_workspace was split, ros_workspace_shell installs the setup files and
+# ros_workspace adds the ament part on top of it.
+WORKSPACE_PACKAGE_DEPENDENCIES = {
+    'ros_workspace': ('ros_workspace_shell',),
+}
+
+
+def get_workspace_packages(workspace_package):
+    """Return the packages that make up the workspace of a prefix.
+
+    That is ``workspace_package`` followed by the packages it needs in the
+    same prefix (WORKSPACE_PACKAGE_DEPENDENCIES). REP 159: in a
+    binary_import child each of them gets the parent prefixes when it is
+    built, and depends on the workspace package of each parent.
+    """
+    return [workspace_package] + list(WORKSPACE_PACKAGE_DEPENDENCIES.get(workspace_package, ()))
+
+
 def get_binary_import_parents(distro, index=None):
     """Return the distributions whose binaries ``distro`` uses, nearest first.
 

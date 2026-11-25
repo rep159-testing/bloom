@@ -1,4 +1,5 @@
 from bloom.generators.rosdebian import get_workspace_dependencies
+from bloom.rosdistro_api import get_workspace_packages
 
 
 def test_packages_depend_on_their_own_ros_workspace():
@@ -42,6 +43,28 @@ def test_child_workspace_package_depends_on_each_parent_own_workspace_package():
         ['ros-mid-ros-workspace', 'ros-root-ros-workspace-shell']
     assert get_workspace_dependencies('ros_workspace_shell', 'child', 'ros_workspace_shell', parents) == \
         ['ros-mid-ros-workspace', 'ros-root-ros-workspace-shell']
+
+
+def test_ros_workspace_shell_does_not_depend_on_ros_workspace():
+    # REP 159: ros_workspace depends on ros_workspace_shell since the split,
+    # so the reverse dependency would be a cycle
+    assert get_workspace_dependencies('ros_workspace_shell', 'upstream', 'ros_workspace', []) == []
+
+
+def test_child_ros_workspace_shell_depends_on_each_parent_workspace_package():
+    # its setup files source the parents' setup files
+    parents = [('mid', 'ros_workspace'), ('root', 'ros_workspace_shell')]
+    assert get_workspace_dependencies('ros_workspace_shell', 'child', 'ros_workspace', parents) == \
+        ['ros-mid-ros-workspace', 'ros-root-ros-workspace-shell']
+    # other packages still depend on the child's own ros_workspace
+    assert get_workspace_dependencies('downstream_bin_a', 'child', 'ros_workspace', parents) == \
+        ['ros-child-ros-workspace']
+
+
+def test_workspace_packages():
+    assert get_workspace_packages('ros_workspace') == ['ros_workspace', 'ros_workspace_shell']
+    assert get_workspace_packages('ros_workspace_shell') == ['ros_workspace_shell']
+    assert get_workspace_packages('my_workspace') == ['my_workspace']
 
 
 def _generator_for(distro):

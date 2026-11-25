@@ -50,6 +50,7 @@ from bloom.rosdistro_api import get_index
 from bloom.rosdistro_api import get_install_prefix
 from bloom.rosdistro_api import get_non_eol_distros_prompt
 from bloom.rosdistro_api import get_workspace_package
+from bloom.rosdistro_api import get_workspace_packages
 
 
 class RosDebianGenerator(DebianGenerator):
@@ -125,7 +126,7 @@ class RosDebianGenerator(DebianGenerator):
         subs['ParentPrefixes'] = [get_install_prefix(parent) for parent, _ in parents]
         if self.rosdistro in ros2_distros:
             workspace_package = self.get_workspace_package()
-            subs['WorkspacePackage'] = workspace_package
+            subs['WorkspacePackages'] = get_workspace_packages(workspace_package)
             workspace_deps = get_workspace_dependencies(package.name, self.rosdistro, workspace_package, parents)
             subs['BuildDepends'] += workspace_deps
             subs['Depends'] += workspace_deps
@@ -186,14 +187,16 @@ def get_workspace_dependencies(package_name, rosdistro, workspace_package, paren
 
     Every package depends on its own distribution's workspace package, which
     provides the setup files: ``workspace_package`` of the distribution file,
-    ros_workspace by default (REP 159). ros_workspace itself and the two
-    packages it is built with get none. REP 159: the workspace package of a
-    binary_import child depends on the workspace package of each parent
-    instead, given as ``(parent, workspace package)`` pairs, so that the
-    prefixes its setup files source are installed, and present when it is
-    built.
+    ros_workspace by default (REP 159). The workspace package itself and the
+    packages it needs in its prefix (get_workspace_packages(), for
+    ros_workspace also ros_workspace_shell, which installs the setup files)
+    get none, and neither do the two packages ros_workspace is built with.
+    REP 159: in a binary_import child, the workspace package and the packages
+    it needs depend on the workspace package of each parent instead, given as
+    ``(parent, workspace package)`` pairs, so that the prefixes their setup
+    files source are installed, and present when they are built.
     """
-    if package_name == workspace_package:
+    if package_name in get_workspace_packages(workspace_package):
         return [rosify_package_name(sanitize_package_name(parent_workspace), parent)
                 for parent, parent_workspace in parents]
     if workspace_package == 'ros_workspace' and package_name in ('ament_cmake_core', 'ament_package'):
