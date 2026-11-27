@@ -363,6 +363,10 @@ def generate_substitutions_from_package(
     # REP 159: install prefixes of the binary_import parent distributions,
     # nearest first; the rosdebian generator fills them in
     data['ParentPrefixes'] = []
+    # REP 159: the workspace package of the prefix and the packages it needs
+    # there, which alone get the parent prefixes; the rosdebian generator
+    # fills them in
+    data['WorkspacePackages'] = []
     # Resolve dependencies
     evaluate_package_conditions(package, ros_distro)
     depends = [
@@ -866,7 +870,7 @@ class DebianGenerator(BloomGenerator):
                     warning("Overwriting tag: " + tag_name)
             else:
                 info("Creating tag: " + tag_name)
-            execute_command('git tag -f ' + tag_name)
+            execute_command('git tag -f -m "' + tag_name + '" ' + tag_name)
         # Report of success
         name = destination.split('/')[-1]
         package = self.packages[name]

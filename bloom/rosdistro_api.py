@@ -169,13 +169,49 @@ def get_most_recent(thing_name, repository, reference_distro):
 def get_distribution_file(distro):
     global _rosdistro_distribution_files
     if distro not in _rosdistro_distribution_files:
-        # REP 143, get list of distribution files and take the last one
-        files = rosdistro.get_distribution_files(get_index(), distro)
-        if not files:
+        # REP 143 / REP 159: merge distribution files and resolve extends
+        dist_file = rosdistro.get_distribution_file(get_index(), distro)
+        if dist_file is None:
             error("No distribution files listed for distribution '{0}'."
                   .format(distro), exit=True)
-        _rosdistro_distribution_files[distro] = files[-1]
+        _rosdistro_distribution_files[distro] = dist_file
     return _rosdistro_distribution_files[distro]
+
+
+# REP 159: the package that installs the setup files of a distribution's
+# prefix, unless its distribution file names another one in
+# 'workspace_package'
+DEFAULT_WORKSPACE_PACKAGE = 'ros_workspace'
+
+
+def get_workspace_package(distro, index=None):
+    """Return the package that installs the setup files of ``distro``'s prefix.
+
+    REP 159: a distribution file may name it in ``workspace_package``;
+    without it, the package is ros_workspace. It is not inherited from parents.
+    """
+    if index is None:
+        index = get_index()
+    return _get_workspace_package(_get_last_distribution_file(index, distro))
+
+
+# REP 159: the packages a workspace package needs in its own prefix. Since
+# ros_workspace was split, ros_workspace_shell installs the setup files and
+# ros_workspace adds the ament part on top of it.
+WORKSPACE_PACKAGE_DEPENDENCIES = {
+    'ros_workspace': ('ros_workspace_shell',),
+}
+
+
+def get_workspace_packages(workspace_package):
+    """Return the packages that make up the workspace of a prefix.
+
+    That is ``workspace_package`` followed by the packages it needs in the
+    same prefix (WORKSPACE_PACKAGE_DEPENDENCIES). REP 159: in a
+    binary_import child each of them gets the parent prefixes when it is
+    built, and depends on the workspace package of each parent.
+    """
+    return [workspace_package] + list(WORKSPACE_PACKAGE_DEPENDENCIES.get(workspace_package, ()))
 
 
 def get_binary_import_parents(distro, index=None):
@@ -191,23 +227,38 @@ def get_binary_import_parents(distro, index=None):
     Raises RuntimeError when a declared parent cannot be read or when
     ``extends`` has a cycle.
     """
+    return [parent for parent, _ in get_binary_import_parent_workspace_packages(distro, index)]
+
+
+def get_binary_import_parent_workspace_packages(distro, index=None):
+    """Return ``(parent, workspace package)`` for each binary_import parent.
+
+    The parents are those of get_binary_import_parents(), in the same order;
+    the workspace package of each is read from the parent's own distribution
+    file, in the parent's own index when ``extends`` names one.
+    """
     if index is None:
         index = get_index()
     parents = []
-    _collect_binary_import_parents(index, distro, _get_extends(index, distro), [distro], parents)
+    _collect_binary_import_parents(
+        index, distro, _get_last_distribution_file(index, distro), [distro], parents)
     return parents
 
 
-def _get_extends(index, distro):
+def _get_last_distribution_file(index, distro):
     # REP 143: the last distribution file is the one to use
     files = rosdistro.get_distribution_files(index, distro)
     if not files:
         raise RuntimeError("No distribution files listed for distribution '{0}'".format(distro))
-    return getattr(files[-1], 'extends', None) or []
+    return files[-1]
 
 
-def _collect_binary_import_parents(index, distro, extends, chain, parents):
-    for ext in extends:
+def _get_workspace_package(distribution_file):
+    return getattr(distribution_file, 'workspace_package', None) or DEFAULT_WORKSPACE_PACKAGE
+
+
+def _collect_binary_import_parents(index, distro, distribution_file, chain, parents):
+    for ext in getattr(distribution_file, 'extends', None) or []:
         if ext['extension_method'] != 'binary_import':
             continue
         parent = ext['distro_name']
@@ -215,13 +266,13 @@ def _collect_binary_import_parents(index, distro, extends, chain, parents):
             raise RuntimeError("Cycle in 'extends': {0}".format(' -> '.join(chain + [parent])))
         try:
             parent_index = rosdistro.get_index(ext['index_url']) if ext.get('index_url') else index
-            parent_extends = _get_extends(parent_index, parent)
+            parent_file = _get_last_distribution_file(parent_index, parent)
         except Exception as e:
             raise RuntimeError("Could not read distribution '{0}', which '{1}' extends: {2}"
                                .format(parent, distro, e))
-        if parent not in parents:
-            parents.append(parent)
-        _collect_binary_import_parents(parent_index, parent, parent_extends, chain + [parent], parents)
+        if parent not in [name for name, _ in parents]:
+            parents.append((parent, _get_workspace_package(parent_file)))
+        _collect_binary_import_parents(parent_index, parent, parent_file, chain + [parent], parents)
 
 
 def get_rosdistro_index_commit():
@@ -239,3 +290,38 @@ def get_non_eol_distros_prompt():
         if info.get('distribution_status') != 'end-of-life':
             non_eol_distros.append(name)
     return ', '.join(non_eol_distros)
+
+
+def get_binary_package_name(distro, package_name):
+    """Return the platform binary package name for package_name in distro.
+
+    If the distribution file specifies a binary_rule (REP 159), delegates to
+    dist_file.get_binary_package_name(). Otherwise falls back to standard
+    ros-<distro>-<pkg> naming.
+    """
+    try:
+        dist_file = get_distribution_file(distro)
+        if dist_file and hasattr(dist_file, 'get_binary_package_name'):
+            return dist_file.get_binary_package_name(package_name)
+    except Exception:
+        pass
+    return 'ros-{0}-{1}'.format(distro, package_name.replace('_', '-'))
+
+
+def get_install_prefix(distro, package_name=None):
+    """Return the installation prefix for distro.
+
+    If the distribution file specifies an install_rule (REP 159), delegates to
+    dist_file.get_install_prefix(). Otherwise defaults to /opt/ros/<distro>.
+    """
+    try:
+        dist_file = get_distribution_file(distro)
+        if dist_file and hasattr(dist_file, 'get_install_prefix'):
+            return dist_file.get_install_prefix(package_name)
+        if dist_file and getattr(dist_file, 'install_rule', None):
+            rule = dist_file.install_rule
+            if isinstance(rule, str):
+                return rule.replace('{distro}', distro)
+    except Exception:
+        pass
+    return '/opt/ros/{0}'.format(distro)

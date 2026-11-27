@@ -5,6 +5,7 @@ import subprocess
 import pytest
 
 import bloom.generators.debian
+from bloom.rosdistro_api import get_workspace_packages
 from bloom.util import expand_template_em
 
 TEMPLATES = os.path.join(os.path.dirname(bloom.generators.debian.__file__), 'templates')
@@ -12,12 +13,12 @@ GOLDEN = os.path.join(os.path.dirname(__file__), 'test_generator_data', 'rules_g
 BUILD_TYPES = ('ament_cmake', 'cmake')
 PARENTS = ['/opt/ros/mid', '/opt/ros/root']
 SETUP_LINE = (
-    '\tif [ -f "/opt/ros/root/setup.sh" ]; then . "/opt/ros/root/setup.sh"; fi && '
-    'if [ -f "/opt/ros/mid/setup.sh" ]; then . "/opt/ros/mid/setup.sh"; fi && '
+    '\tif [ -f "/opt/ros/root/setup.sh" ]; then . "/opt/ros/root/setup.sh"; unset AMENT_CURRENT_PREFIX; fi && '
+    'if [ -f "/opt/ros/mid/setup.sh" ]; then . "/opt/ros/mid/setup.sh"; unset AMENT_CURRENT_PREFIX; fi && '
     'if [ -f "/opt/ros/child/setup.sh" ]; then . "/opt/ros/child/setup.sh"; fi && \\')
 
 
-def render(build_type, prefix, parents, name):
+def render(build_type, prefix, parents, name, workspace_package='ros_workspace'):
     with open(os.path.join(TEMPLATES, build_type, 'rules.em')) as f:
         template = f.read()
     return expand_template_em(template, {
@@ -25,6 +26,7 @@ def render(build_type, prefix, parents, name):
         'Name': name,
         'Package': 'ros-%s-%s' % (os.path.basename(prefix), name.replace('_', '-')),
         'ParentPrefixes': parents,
+        'WorkspacePackages': get_workspace_packages(workspace_package),
     })
 
 
@@ -50,7 +52,7 @@ def test_child_rules_use_the_parents(build_type):
 
 
 @pytest.mark.parametrize('build_type', BUILD_TYPES)
-def test_only_ros_workspace_gets_the_parent_list(build_type):
+def test_only_the_workspace_package_gets_the_parent_list(build_type):
     rules = render(build_type, '/opt/ros/child', ['/opt/ros/root'], 'upstream_c')
     assert 'ROS_WORKSPACE_PARENT_PREFIX_PATH' not in rules
     assert '-DCMAKE_PREFIX_PATH="/opt/ros/child;/opt/ros/root"' in rules
@@ -67,3 +69,26 @@ def test_child_rules_are_a_valid_makefile(build_type, tmp_path):
                             universal_newlines=True)
     assert result.returncode == 0, result.stderr
     assert '-DROS_WORKSPACE_PARENT_PREFIX_PATH="/opt/ros/mid;/opt/ros/root"' in result.stdout
+
+
+@pytest.mark.parametrize('build_type', BUILD_TYPES)
+def test_another_workspace_package_gets_the_parent_list(build_type):
+    rules = render(build_type, '/opt/ros/child', ['/opt/ros/root'], 'ros_workspace_shell',
+                   workspace_package='ros_workspace_shell')
+    assert '-DROS_WORKSPACE_PARENT_PREFIX_PATH="/opt/ros/root"' in rules
+    # ros_workspace is then an ordinary package
+    rules = render(build_type, '/opt/ros/child', ['/opt/ros/root'], 'ros_workspace',
+                   workspace_package='ros_workspace_shell')
+    assert 'ROS_WORKSPACE_PARENT_PREFIX_PATH' not in rules
+
+
+@pytest.mark.parametrize('build_type', BUILD_TYPES)
+def test_ros_workspace_shell_gets_the_parent_list_with_ros_workspace(build_type):
+    # REP 159: after the split of ros_workspace, ros_workspace_shell installs
+    # the setup files of a prefix whose workspace package is ros_workspace,
+    # so it needs the parent prefixes too
+    rules = render(build_type, '/opt/ros/child', PARENTS, 'ros_workspace_shell')
+    assert '-DROS_WORKSPACE_PARENT_PREFIX_PATH="/opt/ros/mid;/opt/ros/root"' in rules
+    # ros_workspace keeps them, for a ros_workspace that still installs them
+    rules = render(build_type, '/opt/ros/child', PARENTS, 'ros_workspace')
+    assert '-DROS_WORKSPACE_PARENT_PREFIX_PATH="/opt/ros/mid;/opt/ros/root"' in rules

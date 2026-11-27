@@ -11,7 +11,7 @@ export DH_VERBOSE=1
 @{
 # REP 159: binary_import parents of this distribution, nearest first
 source_parents = ''.join(
-    'if [ -f "%s/setup.sh" ]; then . "%s/setup.sh"; fi && ' % (p, p)
+    'if [ -f "%s/setup.sh" ]; then . "%s/setup.sh"; unset AMENT_CURRENT_PREFIX; fi && ' % (p, p)
     for p in reversed(ParentPrefixes))
 prefix_path = ';'.join([InstallationPrefix] + list(ParentPrefixes))
 pkg_config_path = ':'.join(p + '/lib/pkgconfig' for p in [InstallationPrefix] + list(ParentPrefixes))
@@ -43,7 +43,7 @@ override_dh_auto_configure:
 		-DCMAKE_INSTALL_PREFIX="@(InstallationPrefix)" \
 		-DAMENT_PREFIX_PATH="@(prefix_path)" \
 		-DCMAKE_PREFIX_PATH="@(prefix_path)" \
-@[if Name == 'ros_workspace' and ParentPrefixes]@
+@[if Name in WorkspacePackages and ParentPrefixes]@
 		-DROS_WORKSPACE_PARENT_PREFIX_PATH="@(';'.join(ParentPrefixes))" \
 @[end if]@
 		$(BUILD_TESTING_ARG)
