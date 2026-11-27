@@ -3,15 +3,43 @@ name: Run tests
 
 on:  # yamllint disable-line rule:truthy
   push:
-    branches: ['master']
+    branches: ['master', 'rep159']
   pull_request:
   workflow_call:
 
+env:
+  REP159_ROSDISTRO: git+https://github.com/rep159-testing/rosdistro.git@rep159
+
 jobs:
+  # The REP 159 tests read distribution format 3, which only the REP 159
+  # rosdistro can. The reusable ros-infrastructure/ci pytest workflow installs
+  # rosdistro from its own constraints, so this is its matrix, without Windows,
+  # with the REP 159 rosdistro installed over the released one.
   pytest:
-    uses: ros-infrastructure/ci/.github/workflows/pytest.yaml@main
-    with:
-      matrix-filter: del(.matrix.os[] | select(contains("windows")))
+    strategy:
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+        python: ['3.10', '3.11', '3.12', '3.13', '3.14']
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install dependencies
+        run: |
+          python -m pip install -U pip setuptools
+          python -m pip install -e '.[test]'
+      - name: Install the REP 159 rosdistro
+        # It reports the same version as the released one, so check that it
+        # is the one installed.
+        run: |
+          python -m pip install --force-reinstall --no-deps "$REP159_ROSDISTRO"
+          python -c "
+          from rosdistro.distribution_file import DistributionFile
+          assert hasattr(DistributionFile, 'merge_extends')"
+      - name: Run tests
+        run: python -m pytest
 
   # Dedicated job for testing with empy < 4
   pytest-empy-legacy:
@@ -25,6 +53,12 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -e .[test] 'empy<4'
+      - name: Install the REP 159 rosdistro
+        run: |
+          python -m pip install --force-reinstall --no-deps "$REP159_ROSDISTRO"
+          python -c "
+          from rosdistro.distribution_file import DistributionFile
+          assert hasattr(DistributionFile, 'merge_extends')"
       - name: Run tests
         run: |
           python -m pytest test/ -v
